@@ -1,73 +1,120 @@
+import glob
 import polars as pl
+
+
+def ler_acumulado(pasta: str, nome_arquivo: str) -> pl.DataFrame:
+    """
+    Localiza o arquivo em todas as subpastas, lê com suporte a datas automático,
+    combina os dados e garante que colunas de data sejam interpretadas como Date.
+    """
+    caminho_padrao = f"{pasta}/**/{nome_arquivo}"
+    arquivos = glob.glob(caminho_padrao, recursive=True)
+
+    if not arquivos:
+        raise FileNotFoundError(
+            f"Nenhum arquivo '{nome_arquivo}' foi encontrado nas subpastas de '{pasta}'."
+        )
+
+    # Lê todos os arquivos aplicando a tentativa automática de parsear datas
+    df = pl.concat([pl.read_csv(f, try_parse_dates=True) for f in arquivos])
+
+    # Garante a conversão de qualquer coluna com "data" no nome que ainda esteja como String
+    for col_name in df.columns:
+        if "data" in col_name.lower() and df[col_name].dtype == pl.String:
+            df = df.with_columns(pl.col(col_name).str.to_date(strict=False))
+
+    return df
 
 
 def extrair_fontes(pasta: str = "data") -> dict[str, pl.DataFrame]:
     """
-    Lê os CSVs OLTP e retorna DataFrames brutos com colunas renomeadas
-    para o padrão id_<entidade> e <entidade>_id → id_<entidade>.
+    Varre as subpastas (v1, v2, etc.), unifica o histórico acumulado
+    e remove duplicatas mantendo o registro mais recente baseado no ID.
     """
+
     programas = (
-        pl.read_csv(f"{pasta}/programas.csv")
+        ler_acumulado(pasta, "programas.csv")
+        .unique(subset=["id"], keep="last")
         .rename({"id": "id_programa"})
     )
+
     projetos = (
-        pl.read_csv(f"{pasta}/projetos.csv")
+        ler_acumulado(pasta, "projetos.csv")
+        .unique(subset=["id"], keep="last")
         .rename({"id": "id_projeto", "programa_id": "id_programa"})
     )
+
     tarefas = (
-        pl.read_csv(f"{pasta}/tarefas_projeto.csv")
+        ler_acumulado(pasta, "tarefas_projeto.csv")
+        .unique(subset=["id"], keep="last")
         .rename({
             "id": "id_tarefa",
             "projeto_id": "id_projeto",
             "data_fim_prevista": "data_fim_prev",
         })
     )
+
     tempo_tarefas = (
-        pl.read_csv(f"{pasta}/tempo_tarefas.csv")
+        ler_acumulado(pasta, "tempo_tarefas.csv")
+        .unique(subset=["id"], keep="last")
         .rename({"id": "id_tempo", "tarefa_id": "id_tarefa"})
     )
+
     materiais = (
-        pl.read_csv(f"{pasta}/materiais.csv")
+        ler_acumulado(pasta, "materiais.csv")
+        .unique(subset=["id"], keep="last")
         .rename({"id": "id_material"})
     )
+
     fornecedores = (
-        pl.read_csv(f"{pasta}/fornecedores.csv")
+        ler_acumulado(pasta, "fornecedores.csv")
+        .unique(subset=["id"], keep="last")
         .rename({"id": "id_fornecedor"})
     )
+
     solicitacoes = (
-        pl.read_csv(f"{pasta}/solicitacoes_compra.csv")
+        ler_acumulado(pasta, "solicitacoes_compra.csv")
+        .unique(subset=["id"], keep="last")
         .rename({
             "id": "id_solicitacao",
             "projeto_id": "id_projeto",
             "material_id": "id_material",
         })
     )
+
     pedidos = (
-        pl.read_csv(f"{pasta}/pedidos_compra.csv")
+        ler_acumulado(pasta, "pedidos_compra.csv")
+        .unique(subset=["id"], keep="last")
         .rename({
             "id": "id_pedido",
             "solicitacao_id": "id_solicitacao",
             "fornecedor_id": "id_fornecedor",
         })
     )
+
     compras_projeto = (
-        pl.read_csv(f"{pasta}/compras_projeto.csv")
+        ler_acumulado(pasta, "compras_projeto.csv")
+        .unique(subset=["id"], keep="last")
         .rename({
             "id": "id_compra_projeto",
             "pedido_compra_id": "id_pedido",
             "projeto_id": "id_projeto",
         })
     )
+
     empenho = (
-        pl.read_csv(f"{pasta}/empenho_materiais.csv")
+        ler_acumulado(pasta, "empenho_materiais.csv")
+        .unique(subset=["id"], keep="last")
         .rename({
             "id": "id_empenho",
             "projeto_id": "id_projeto",
             "material_id": "id_material",
         })
     )
+
     estoque = (
-        pl.read_csv(f"{pasta}/estoque_materiais_projeto.csv")
+        ler_acumulado(pasta, "estoque_materiais_projeto.csv")
+        .unique(subset=["id"], keep="last")
         .rename({
             "id": "id_estoque",
             "projeto_id": "id_projeto",
